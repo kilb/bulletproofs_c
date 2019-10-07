@@ -1,6 +1,6 @@
 #include "range_proof.h"
-#include <openssl/sm3.h>
 #include <openssl/err.h>
+#include <string.h>
 
 #define BN_add_vec(r, x1, x2, n, order, ctx, error)                    \
     {                                                                  \
@@ -642,7 +642,7 @@ error:
     return valid;
 }
 
-void RANG_PROOF_free(RANGE_PROOF *p)
+void RANGE_PROOF_free(RANGE_PROOF *p)
 {
     EC_POINT_free(p->A);
     EC_POINT_free(p->S);
@@ -652,4 +652,168 @@ void RANG_PROOF_free(RANGE_PROOF *p)
     BN_free(p->tr);
     BN_free(p->e);
     IP_PROOF_free(p->ip_proof);
+}
+
+char *range_proof_2_hex(const EC_GROUP *group, RANGE_PROOF *p)
+{
+    if (!p)
+    {
+        return NULL;
+    }
+
+    int m = 0;
+    char *a = NULL;
+    char *s = NULL;
+    char *t1 = NULL;
+    char *t2 = NULL;
+    char *tx = NULL;
+    char *tr = NULL;
+    char *e = NULL;
+    char *ip = NULL;
+    char *r = NULL;
+
+    int na, ns, nt1, nt2, ntx, ntr, ne, nip;
+
+    BN_CTX *ctx = NULL;
+
+    try_or(ctx = BN_CTX_new(), error);
+
+    try_or(tx = BN_bn2hex(p->tx), error);
+    try_or(tr = BN_bn2hex(p->tr), error);
+    try_or(e = BN_bn2hex(p->e), error);
+
+    try_or(a = EC_POINT_point2hex(group, p->A, POINT_CONVERSION_COMPRESSED, ctx), error);
+    try_or(s = EC_POINT_point2hex(group, p->S, POINT_CONVERSION_COMPRESSED, ctx), error);
+    try_or(t1 = EC_POINT_point2hex(group, p->T1, POINT_CONVERSION_COMPRESSED, ctx), error);
+    try_or(t2 = EC_POINT_point2hex(group, p->T2, POINT_CONVERSION_COMPRESSED, ctx), error);
+
+    try_or(ip = ip_proof_2_hex(group, p->ip_proof), error);
+
+    na = strlen(a) + 1;
+    ns = strlen(s) + 1;
+    nt1 = strlen(t1) + 1;
+    nt2 = strlen(t2) + 1;
+    ntx = strlen(tx) + 1;
+    ntr = strlen(tr) + 1;
+    ne = strlen(e) + 1;
+    nip = strlen(ip) + 1;
+
+    m = na + ns + nt1 + nt2 + ntx + ntr + ne + nip;
+
+    try_or(r = (char *)malloc(sizeof(char) * m), error);
+    
+    m = 0;
+    
+    strcpy(r, tx);
+    m += ntx;
+    r[m - 1] = ':';
+
+    strcpy(r + m, tr);
+    m += ntr;
+    r[m - 1] = ':';
+    
+    strcpy(r + m, e);
+    m += ne;
+    r[m - 1] = ':';
+
+    strcpy(r + m, a);
+    m += na;
+    r[m - 1] = ':';
+    
+    strcpy(r + m, s);
+    m += ns;
+    r[m - 1] = ':';
+    
+    strcpy(r + m, t1);
+    m += nt1;
+    r[m - 1] = ':';
+    
+    strcpy(r + m, t2);
+    m += nt2;
+    r[m - 1] = ':';
+    
+    strcpy(r + m, ip);
+    m += nip;
+    r[m - 1] = '\0';
+
+error:
+    BN_CTX_free(ctx);
+    free(a);
+    free(s);
+    free(t1);
+    free(t2);
+    free(tx);
+    free(tr);
+    free(e);
+    free(ip);
+
+    return r;
+}
+
+RANGE_PROOF *hex_2_range_proof(const EC_GROUP *group, char *h)
+{
+    char *pt[10];
+    EC_POINT *A = NULL;
+    EC_POINT *S = NULL;
+    EC_POINT *T1 = NULL;
+    EC_POINT *T2 = NULL;
+    BIGNUM *tx = NULL;
+    BIGNUM *tr = NULL;
+    BIGNUM *e = NULL;
+    IP_PROOF *ip = NULL;
+    RANGE_PROOF *proof = NULL;
+    BN_CTX *ctx = NULL;
+
+    try_or(ctx = BN_CTX_new(), error);
+
+    try_or(A = EC_POINT_new(group), error);
+    try_or(S = EC_POINT_new(group), error);
+    try_or(T1 = EC_POINT_new(group), error);
+    try_or(T2 = EC_POINT_new(group), error);
+
+    pt[0] = h;
+    for (int i = 0, j = 1; j < 8; ++i)
+    {
+        if (h[i] == ':' || h[i] == '\0')
+        {
+            h[i] = '\0';
+            pt[j] = h + i + 1;
+            ++j;
+        }
+    }
+
+    try_or(BN_hex2bn(&tx, pt[0]), error);
+    try_or(BN_hex2bn(&tr, pt[1]), error);
+    try_or(BN_hex2bn(&e, pt[2]), error);
+    try_or(EC_POINT_hex2point(group, pt[3], A, ctx), error);
+    try_or(EC_POINT_hex2point(group, pt[4], S, ctx), error);
+    try_or(EC_POINT_hex2point(group, pt[5], T1, ctx), error);
+    try_or(EC_POINT_hex2point(group, pt[6], T2, ctx), error);
+    try_or(ip = hex_2_ip_proof(group, pt[7]), error);
+    try_or(proof = (RANGE_PROOF *)malloc(sizeof(RANGE_PROOF)), error);
+
+    proof->A = A;
+    proof->S = S;
+    proof->T1 = T1;
+    proof->T2 = T2;
+    proof->tx = tx;
+    proof->tr = tr;
+    proof->e = e;
+    proof->ip_proof = ip;
+
+error:
+    BN_CTX_free(ctx);
+    if (!proof)
+    {
+        BN_free(tx);
+        BN_free(tr);
+        BN_free(e);
+        EC_POINT_free(A);
+        EC_POINT_free(S);
+        EC_POINT_free(T1);
+        EC_POINT_free(T2);
+        IP_PROOF_free(ip);
+    }
+
+    return proof;
 }

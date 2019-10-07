@@ -1,8 +1,9 @@
 #include "inner_product.h"
 #include <stdlib.h>
-#include <openssl/sm3.h>
+#include <string.h>
 #include <openssl/bn.h>
-#include <openssl/sm2.h>
+#include <openssl/sha.h>
+#include <openssl/obj_mac.h>
 
 #define BN_fold(a, x0, x1, n, order, ctx, error)                                                                                                                                           \
     {                                                                                                                                                                                      \
@@ -34,9 +35,183 @@
         }                \
     }
 
+char *ip_proof_2_hex(const EC_GROUP* group, IP_PROOF *p) {
+    if(!p) {
+        return NULL;
+    }
+    
+    int m = 0;
+    char *a = NULL;
+    char *b = NULL;
+    char *s = NULL;
+    char *L[p->n];
+    char *R[p->n];
+    int na, nb, nL[p->n], nR[p->n];
+    BN_CTX *ctx = NULL;
+    
+    for(int i = 0; i < p->n; ++i) {
+        L[i] = NULL;
+        R[i] = NULL;
+    }
+
+    try_or(ctx = BN_CTX_new(), error);
+    
+    try_or(a = BN_bn2hex(p->a), error);
+    try_or(b = BN_bn2hex(p->b), error);
+    
+    for(int i = 0; i < p->n; ++i) {
+        try_or(L[i] = EC_POINT_point2hex(group, p->L[i], POINT_CONVERSION_COMPRESSED, ctx), error);
+        try_or(R[i] = EC_POINT_point2hex(group, p->R[i], POINT_CONVERSION_COMPRESSED, ctx), error);
+    }
+
+    na = strlen(a) + 1; nb = strlen(b) + 1;
+    m = na + nb;
+    for(int i = 0; i < p->n; ++i) {
+        nL[i] = strlen(L[i]) + 1;
+        nR[i] = strlen(R[i]) + 1;
+        m += (nL[i] + nR[i]);
+    }
+
+    try_or(s = (char *)malloc(sizeof(char) * m), error);
+    m = 0;
+    strcpy(s, a); m += na; s[m-1] = ':';
+    strcpy(s+m, b); m += nb; s[m-1] = ':';
+
+    for(int i = 0; i < p->n; ++i) {
+        strcpy(s+m, L[i]); m += nL[i]; s[m-1] = ':';
+    }
+    for(int i = 0; i < p->n; ++i) {
+        strcpy(s+m, R[i]); m += nR[i]; s[m-1] = ':';
+    }
+    s[m-1] = '\0';
+
+error:
+    BN_CTX_free(ctx);
+    free(a);
+    free(b);
+    for(int i = 0; i < p->n; ++i) {
+        free(L[i]);
+        free(R[i]);
+    }
+
+    return s;
+}
+
+IP_PROOF *hex_2_ip_proof(const EC_GROUP* group, char *s) {
+    if(!s) {
+        return NULL;
+    }
+    IP_PROOF *p = NULL;
+    EC_POINT **L = NULL;
+    EC_POINT **R = NULL;
+    BIGNUM *a = NULL;
+    BIGNUM *b = NULL;
+
+    BN_CTX *ctx = NULL;
+
+    char *tmp = s;
+    int i;
+
+    int n = 0;
+    for(i = 0; s[i]; ++i) {
+        if(s[i] == ':') {
+            ++n;
+        }
+    }
+    n = (n-1) >> 1;
+
+    if(n < 3) {
+        return NULL;
+    }
+
+    try_or(L = (EC_POINT**)malloc(sizeof(EC_POINT*) * n), error);
+    try_or(R = (EC_POINT**)malloc(sizeof(EC_POINT*) * n), error);
+    
+    for(i = 0; i < n; ++i) {
+        L[i] = NULL;
+        R[i] = NULL;
+    }
+    
+    try_or(ctx = BN_CTX_new(), error);
+
+    for(int i = 0; i < n; ++i) {
+        try_or(L[i] = EC_POINT_new(group), error);
+        try_or(R[i] = EC_POINT_new(group), error);
+    }
+    
+    for(i = 0; s[i]; ++i) {
+        if(s[i] == ':') {
+            s[i] = '\0';
+            try_or(BN_hex2bn(&a, tmp), error);
+            tmp = s + i + 1;
+            break;
+        }
+    }
+
+    for(i += 1; s[i]; ++i) {
+        if(s[i] == ':') {
+            s[i] = '\0';
+            try_or(BN_hex2bn(&b, tmp), error);
+            tmp = s + i + 1;
+            break;
+        }
+    }
+
+    for(int j = 0; j < n; ++j) {
+        for(i += 1; s[i]; ++i) {
+            if(s[i] == ':') {
+                s[i] = '\0';
+                try_or(EC_POINT_hex2point(group, tmp, L[j], ctx), error);
+                tmp = s + i + 1;
+                break;
+            }
+        }
+    }
+
+    for(int j = 0; j < n; ++j) {
+        for(i += 1; ; ++i) {
+            if(s[i] == ':' || s[i] == '\0') {
+                s[i] = '\0';
+                try_or(EC_POINT_hex2point(group, tmp, R[j], ctx), error);
+                tmp = s + i + 1;
+                break;
+            }
+        }
+    }
+
+    try_or(p = (IP_PROOF*)malloc(sizeof(IP_PROOF)), error);
+
+    p->n = n;
+    p->a = a;
+    p->b = b;
+    p->L = L;
+    p->R = R;
+
+error:
+    BN_CTX_free(ctx);
+    if(!p) {
+        BN_free(a);
+        BN_free(b);
+        if(L) {
+            for(int i = 0; i < n; ++i) {
+                EC_POINT_free(L[i]);
+            }
+            free(L);
+        }
+        if(R) {
+            for(int i = 0; i < n; ++i) {
+                EC_POINT_free(R[i]);
+            }
+            free(R);
+        }
+    }
+
+    return p;
+}
+
 EC_GROUP *EC_GROUP_gen()
 {
-    return EC_GROUP_new_by_curve_name(NID_sm2p256v1);
+    return EC_GROUP_new_by_curve_name(NID_secp256k1);
 }
 
 void ec_print(const EC_GROUP *group, EC_POINT *p)
@@ -48,10 +223,11 @@ void ec_print(const EC_GROUP *group, EC_POINT *p)
 
 int hash(unsigned char *out, const unsigned char *in, const size_t len)
 {
-    // sm3 hash function
-    sm3(in, len, out);
-
-    return SM3_DIGEST_LENGTH;
+    unsigned char* s = SHA256(in, len, NULL);
+    strcpy((char *)out, (char *)s);
+    int out_len = strlen((char *)s);
+    free(s);
+    return out_len;
 }
 
 // calculate hash
@@ -116,7 +292,7 @@ int BN_gen_hash(BIGNUM *out, const BIGNUM *a, const BIGNUM *b, const BIGNUM *c)
     // convert point to string
     if (a)
     {
-        if ((m = BN_bn2binpad(a, payload, 100)) == 0)
+        if ((m = BN_bn2binpad(a, payload, 100)) == -1)
         {
             return 0;
         }
@@ -125,7 +301,7 @@ int BN_gen_hash(BIGNUM *out, const BIGNUM *a, const BIGNUM *b, const BIGNUM *c)
 
     if (b)
     {
-        if ((m = BN_bn2binpad(b, payload + n, 100)) == 0)
+        if ((m = BN_bn2binpad(b, payload + n, 100)) == -1)
         {
             return 0;
         }
@@ -134,7 +310,7 @@ int BN_gen_hash(BIGNUM *out, const BIGNUM *a, const BIGNUM *b, const BIGNUM *c)
 
     if (c)
     {
-        if ((m = BN_bn2binpad(c, payload + n, 100)) == 0)
+        if ((m = BN_bn2binpad(c, payload + n, 100)) == -1)
         {
             return 0;
         }

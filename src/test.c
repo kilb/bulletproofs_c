@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "range_proof.h"
+#include <openssl/ec.h>
 
 #define try_or(x, error) \
     {                    \
@@ -27,6 +28,10 @@ int test2()
     BN_CTX *ctx = NULL;
 
     RANGE_PROOF *proof = NULL;
+    char *str = NULL;
+    RANGE_PROOF *proof2 = NULL;
+
+
 
     for (int i = 0; i < n; ++i)
     {
@@ -81,6 +86,15 @@ int test2()
     try_or(RANGE_PROOF_verify(group, proof, (const EC_POINT **)G, (const EC_POINT **)H, (const EC_POINT **)C, P, bits, n), error);
     printf("verify proof: ok\n");
 
+    try_or(str = range_proof_2_hex(group, proof), error);
+    printf("convert proof to hex: ok\n");
+
+    try_or(proof2 = hex_2_range_proof(group, str), error);
+    printf("convert hex to proof: ok\n");
+
+    try_or(RANGE_PROOF_verify(group, proof2, (const EC_POINT **)G, (const EC_POINT **)H, (const EC_POINT **)C, P, bits, n), error);
+    printf("verify proof2: ok\n");
+
 error:
     for (int i = 0; i < n; ++i)
     {
@@ -99,10 +113,15 @@ error:
     EC_GROUP_free(group);
     BN_CTX_free(ctx);
 
+    RANGE_PROOF_free(proof);
+    RANGE_PROOF_free(proof2);
+    free(str);
+
     return 0;
 }
 
-int test1() {
+int test1()
+{
     int n = 8;
     BIGNUM *a[n];
     BIGNUM *b[n];
@@ -119,12 +138,14 @@ int test1() {
     ctx = BN_CTX_new();
     const BIGNUM *order = EC_GROUP_get0_order(group);
 
-    for(int i=0; i<n; ++i) {
+    for (int i = 0; i < n; ++i)
+    {
         a[i] = BN_rnd_gen();
         b[i] = BN_rnd_gen();
         G[i] = EC_POINT_rnd_gen(group);
         H[i] = EC_POINT_rnd_gen(group);
-        if(!a[i] || !b[i] || !G[i] || !H[i]) {
+        if (!a[i] || !b[i] || !G[i] || !H[i])
+        {
             goto error;
         }
     }
@@ -135,31 +156,51 @@ int test1() {
     P2 = EC_POINT_new(group);
     ab = BN_new();
 
-    EC_POINTs_mul(group, P0, NULL, n, (const EC_POINT**)G, (const BIGNUM **)a, ctx);
-    EC_POINTs_mul(group, P1, NULL, n, (const EC_POINT**)H, (const BIGNUM **)b, ctx);
+    EC_POINTs_mul(group, P0, NULL, n, (const EC_POINT **)G, (const BIGNUM **)a, ctx);
+    EC_POINTs_mul(group, P1, NULL, n, (const EC_POINT **)H, (const BIGNUM **)b, ctx);
     inner_product(ab, (const BIGNUM **)a, (const BIGNUM **)b, order, ctx, n);
     EC_POINT_mul(group, P2, NULL, Q, ab, ctx);
     EC_POINT_add(group, P0, P0, P1, ctx);
     EC_POINT_add(group, P0, P0, P2, ctx);
 
-    if(!Q || !P0 || !P1 || !P2) {
+    if (!Q || !P0 || !P1 || !P2)
+    {
         goto error;
     }
 
     printf("begin:\n");
-    IP_PROOF *proof = inner_product_prove((const EC_POINT**)G, (const EC_POINT**)H, Q, (const BIGNUM **)a, (const BIGNUM **)b, group, n);
+    IP_PROOF *proof = inner_product_prove((const EC_POINT **)G, (const EC_POINT **)H, Q, (const BIGNUM **)a, (const BIGNUM **)b, group, n);
 
-    if(proof == NULL) {
+    if (proof == NULL)
+    {
         printf("proof is NULL\n");
     }
 
-    int ret = inner_product_verify(proof, (const EC_POINT**)G, (const EC_POINT**)H, Q, P0, group, n);
+    int ret = inner_product_verify(proof, (const EC_POINT **)G, (const EC_POINT **)H, Q, P0, group, n);
 
     printf("for valid P, the result is %d.\n", ret);
 
-    ret = inner_product_verify(proof, (const EC_POINT**)G, (const EC_POINT**)H, Q, P1, group, n);
+    ret = inner_product_verify(proof, (const EC_POINT **)G, (const EC_POINT **)H, Q, P1, group, n);
 
     printf("for invalid P, the result is %d.\n", ret);
+
+    char *s = ip_proof_2_hex(group, proof);
+    if (!s)
+    {
+        printf("convert proof to hex: fail\n");
+    }
+
+    IP_PROOF *proof2 = hex_2_ip_proof(group, s);
+    if (!proof2)
+    {
+        printf("convert hex to proof: fail\n");
+    }
+
+    ret = inner_product_verify(proof2, (const EC_POINT **)G, (const EC_POINT **)H, Q, P0, group, n);
+    if (ret)
+    {
+        printf("convert hex to proof: success\n");
+    }
 
 error:
     return 0;

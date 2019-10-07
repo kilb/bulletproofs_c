@@ -26,4 +26,7 @@ int gen_hash(const EC_GROUP *ec_group, BIGNUM *out, const EC_POINT *L, const EC_
 int BN_gen_hash(BIGNUM *out, const BIGNUM *a, const BIGNUM *b, const BIGNUM *c);
 EC_GROUP *EC_GROUP_gen();
 
+char *ip_proof_2_hex(const EC_GROUP* group, IP_PROOF *p);
+IP_PROOF *hex_2_ip_proof(const EC_GROUP* group, char *s);
+
 #endif
