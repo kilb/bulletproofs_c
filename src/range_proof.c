@@ -642,3 +642,14 @@ error:
     return valid;
 }
 
+void RANG_PROOF_free(RANGE_PROOF *p)
+{
+    EC_POINT_free(p->A);
+    EC_POINT_free(p->S);
+    EC_POINT_free(p->T1);
+    EC_POINT_free(p->T2);
+    BN_free(p->tx);
+    BN_free(p->tr);
+    BN_free(p->e);
+    IP_PROOF_free(p->ip_proof);
+}

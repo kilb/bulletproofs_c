@@ -26,6 +26,14 @@
         }                                                                                                                                                                                                  \
     }
 
+#define try_or(x, error) \
+    {                    \
+        if (!(x))        \
+        {                \
+            goto error;  \
+        }                \
+    }
+
 EC_GROUP *EC_GROUP_gen()
 {
     return EC_GROUP_new_by_curve_name(NID_sm2p256v1);
@@ -35,6 +43,7 @@ void ec_print(const EC_GROUP *group, EC_POINT *p)
 {
     char *s = EC_POINT_point2hex(group, (const EC_POINT *)p, POINT_CONVERSION_COMPRESSED, NULL);
     printf("%s\n", s);
+    free(s);
 }
 
 int hash(unsigned char *out, const unsigned char *in, const size_t len)
@@ -257,80 +266,32 @@ IP_PROOF *inner_product_prove(const EC_POINT *G_e[], const EC_POINT *H_e[], EC_P
 
     for (int i = 0; i < m; ++i)
     {
-        if (!(L[i] = EC_POINT_new(group)) || !(R[i] = EC_POINT_new(group)))
-        {
-            goto error;
-        }
+        try_or(L[i] = EC_POINT_new(group), error);
+        try_or(R[i] = EC_POINT_new(group), error);
     }
 
     // copy
     for (int i = 0; i < n; ++i)
     {
-        if (!(G[i] = EC_POINT_dup(G_e[i], group)) || !(H[i] = EC_POINT_dup(H_e[i], group)))
-        {
-            goto error;
-        }
-
-        if (!(a[i] = BN_dup(a_e[i])) || !(b[i] = BN_dup(b_e[i])))
-        {
-            goto error;
-        }
+        try_or(G[i] = EC_POINT_dup(G_e[i], group), error);
+        try_or(H[i] = EC_POINT_dup(H_e[i], group), error);
+        try_or(a[i] = BN_dup(a_e[i]), error);
+        try_or(b[i] = BN_dup(b_e[i]), error);
     }
 
-    if (!(order = EC_GROUP_get0_order(group)))
-    {
-        goto error;
-    }
+    try_or(order = EC_GROUP_get0_order(group), error);
+    
+    try_or(x = BN_new(), error);
+    try_or(x_inv = BN_new(), error);
+    try_or(cl = BN_new(), error);
+    try_or(cr = BN_new(), error);
 
-    if (!(x = BN_new()))
-    {
-        goto error;
-    }
-
-    if (!(x_inv = BN_new()))
-    {
-        goto error;
-    }
-
-    if (!(cl = BN_new()))
-    {
-        goto error;
-    }
-
-    if (!(cr = BN_new()))
-    {
-        goto error;
-    }
-
-    if (!(cl_Q = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(al_Gr = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(br_Hl = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(cr_Q = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(ar_Gl = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(bl_Hr = EC_POINT_new(group)))
-    {
-        goto error;
-    }
+    try_or(cl_Q = EC_POINT_new(group), error);
+    try_or(al_Gr = EC_POINT_new(group), error);
+    try_or(br_Hl = EC_POINT_new(group), error);
+    try_or(cr_Q = EC_POINT_new(group), error);
+    try_or(ar_Gl = EC_POINT_new(group), error);
+    try_or(bl_Hr = EC_POINT_new(group), error);
 
     for (int i = 0, k = n >> 1; i < m; ++i, k >>= 1)
     {
@@ -338,80 +299,29 @@ IP_PROOF *inner_product_prove(const EC_POINT *G_e[], const EC_POINT *H_e[], EC_P
         const BIGNUM **br = (const BIGNUM **)(b + k);
         const EC_POINT **Gr = (const EC_POINT **)(G + k);
         const EC_POINT **Hr = (const EC_POINT **)(H + k);
-
-        if (!inner_product(cl, al, br, order, ctx, k))
-        {
-            goto error;
-        }
-
-        if (!inner_product(cr, ar, bl, order, ctx, k))
-        {
-            goto error;
-        }
+        
+        try_or(inner_product(cl, al, br, order, ctx, k), error);
+        try_or(inner_product(cr, ar, bl, order, ctx, k), error);
 
         // L = <al, Gr> + <br, Hl> + [cl]Q
-        if (!EC_POINT_mul(group, cl_Q, NULL, Q, cl, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINTs_mul(group, al_Gr, NULL, k, Gr, al, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINTs_mul(group, br_Hl, NULL, k, Hl, br, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINT_add(group, L[i], al_Gr, br_Hl, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINT_add(group, L[i], L[i], cl_Q, ctx))
-        {
-            goto error;
-        }
+        try_or(EC_POINT_mul(group, cl_Q, NULL, Q, cl, ctx), error);
+        try_or(EC_POINTs_mul(group, al_Gr, NULL, k, Gr, al, ctx), error);
+        try_or(EC_POINTs_mul(group, br_Hl, NULL, k, Hl, br, ctx), error);
+        try_or(EC_POINT_add(group, L[i], al_Gr, br_Hl, ctx), error);
+        try_or(EC_POINT_add(group, L[i], L[i], cl_Q, ctx), error);
 
         // R = <ar, Gl> + <bl, Hr> + [cr]Q
-        if (!EC_POINT_mul(group, cr_Q, NULL, Q, cr, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINTs_mul(group, ar_Gl, NULL, k, Gl, ar, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINTs_mul(group, bl_Hr, NULL, k, Hr, bl, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINT_add(group, R[i], ar_Gl, bl_Hr, ctx))
-        {
-            goto error;
-        }
-
-        if (!EC_POINT_add(group, R[i], R[i], cr_Q, ctx))
-        {
-            goto error;
-        }
+        try_or(EC_POINT_mul(group, cr_Q, NULL, Q, cr, ctx), error);
+        try_or(EC_POINTs_mul(group, ar_Gl, NULL, k, Gl, ar, ctx), error);
+        try_or(EC_POINTs_mul(group, bl_Hr, NULL, k, Hr, bl, ctx), error);
+        try_or(EC_POINT_add(group, R[i], ar_Gl, bl_Hr, ctx), error);
+        try_or(EC_POINT_add(group, R[i], R[i], cr_Q, ctx), error);
 
         // gen x
-        if (!gen_hash(group, x, L[i], R[i], Q, ctx))
-        {
-            goto error;
-        }
+        try_or(gen_hash(group, x, L[i], R[i], Q, ctx), error);
 
         // x^(-1)
-        if (!BN_mod_inverse(x_inv, x, order, ctx))
-        {
-            goto error;
-        }
+        try_or(BN_mod_inverse(x_inv, x, order, ctx), error);
 
         // update a[0..k]
         BN_fold(a, x, x_inv, k, order, ctx, error);
@@ -484,7 +394,7 @@ int b(int i, int j)
     }
 }
 
-int inner_product_verify(const IP_PROOF *proof, const EC_POINT **G, const EC_POINT **H, 
+int inner_product_verify(const IP_PROOF *proof, const EC_POINT **G, const EC_POINT **H,
                          const EC_POINT *Q, const EC_POINT *P, const EC_GROUP *group, int n)
 {
     // n must be pow of 2.
@@ -518,102 +428,47 @@ int inner_product_verify(const IP_PROOF *proof, const EC_POINT **G, const EC_POI
         x[0][i] = NULL;
         x[1][i] = NULL;
     }
+    
+    try_or(order = EC_GROUP_get0_order(group), error);
+    try_or(ctx = BN_CTX_new(), error);
 
-    if (!(order = EC_GROUP_get0_order(group)))
-    {
-        goto error;
-    }
-
-    if (!(ctx = BN_CTX_new()))
-    {
-        goto error;
-    }
-
-    if (!(ab = BN_new()))
-    {
-        goto error;
-    }
-
-    if (!(G0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(H0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(Q0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(L0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(R0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(P0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
-
-    if (!(T0 = EC_POINT_new(group)))
-    {
-        goto error;
-    }
+    try_or(ab = BN_new(), error);
+    try_or(G0 = EC_POINT_new(group), error);
+    try_or(H0 = EC_POINT_new(group), error);
+    try_or(Q0 = EC_POINT_new(group), error);
+    try_or(L0 = EC_POINT_new(group), error);
+    try_or(R0 = EC_POINT_new(group), error);
+    try_or(P0 = EC_POINT_new(group), error);
+    try_or(T0 = EC_POINT_new(group), error);
 
     for (int i = 0; i < m; ++i)
     {
-        if (!(x[0][i] = BN_new()) || !(x[1][i] = BN_new()))
-        {
-            goto error;
-        }
+        try_or(x[0][i] = BN_new(), error);
+        try_or(x[1][i] = BN_new(), error);
     }
 
     for (int i = 0; i < m; ++i)
     {
         // gen x
-        if (!gen_hash(group, x[0][i], proof->L[i], proof->R[i], Q, ctx))
-        {
-            goto error;
-        }
+        try_or(gen_hash(group, x[0][i], proof->L[i], proof->R[i], Q, ctx), error);
 
         // x^(-1)
-        if (!BN_mod_inverse(x[1][i], x[0][i], order, ctx))
-        {
-            goto error;
-        }
+        try_or(BN_mod_inverse(x[1][i], x[0][i], order, ctx), error);
     }
 
     //si = x1^b(i,1) * x2^b(i,2) *...*xk^b(i,k)
     for (int i = 0; i < n; ++i)
     {
-        if (!(s[i] = BN_dup(x[b(i, m)][0])))
-        {
-            goto error;
-        }
+        try_or(s[i] = BN_dup(x[b(i, m)][0]), error);
 
         for (int j = 1; j < m; ++j)
         {
-            if (!BN_mod_mul(s[i], s[i], x[b(i, m - j)][j], order, ctx))
-            {
-                goto error;
-            }
+            try_or(BN_mod_mul(s[i], s[i], x[b(i, m - j)][j], order, ctx), error);
         }
     }
 
     // G0 = <s, G>
-    if (!EC_POINTs_mul(group, G0, NULL, n, (const EC_POINT **)G, (const BIGNUM **)s, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINTs_mul(group, G0, NULL, n, (const EC_POINT **)G, (const BIGNUM **)s, ctx), error);
 
     //swap
     for (int i = 0; i < (n >> 1); ++i)
@@ -624,80 +479,40 @@ int inner_product_verify(const IP_PROOF *proof, const EC_POINT **G, const EC_POI
     }
 
     // H0 = <1/s, H>
-    if (!EC_POINTs_mul(group, H0, NULL, n, (const EC_POINT **)H, (const BIGNUM **)s, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINTs_mul(group, H0, NULL, n, (const EC_POINT **)H, (const BIGNUM **)s, ctx), error);
 
     // G0 = aG0
-    if (!EC_POINT_mul(group, G0, NULL, G0, proof->a, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINT_mul(group, G0, NULL, G0, proof->a, ctx), error);
 
     // H0 = bH0
-    if (!EC_POINT_mul(group, H0, NULL, H0, proof->b, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINT_mul(group, H0, NULL, H0, proof->b, ctx), error);
 
     // ab = ab
-    if (!BN_mod_mul(ab, proof->a, proof->b, order, ctx))
-    {
-        goto error;
-    }
+    try_or(BN_mod_mul(ab, proof->a, proof->b, order, ctx), error);
 
     // Q0 = [ab]Q
-    if (!EC_POINT_mul(group, Q0, NULL, Q, ab, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINT_mul(group, Q0, NULL, Q, ab, ctx), error);
 
     // xi = xi^(2)
     for (int i = 0; i < m; ++i)
     {
-        if (!BN_mod_mul(x[0][i], x[0][i], x[0][i], order, ctx))
-        {
-            goto error;
-        }
-        if (!BN_mod_mul(x[1][i], x[1][i], x[1][i], order, ctx))
-        {
-            goto error;
-        }
+        try_or(BN_mod_mul(x[0][i], x[0][i], x[0][i], order, ctx), error);
+        try_or(BN_mod_mul(x[1][i], x[1][i], x[1][i], order, ctx), error);
     }
 
     // L0 = <L, x>
-    if (!EC_POINTs_mul(group, L0, NULL, m, (const EC_POINT **)proof->L, (const BIGNUM **)x[0], ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINTs_mul(group, L0, NULL, m, (const EC_POINT **)proof->L, (const BIGNUM **)x[0], ctx), error);
 
     // R0 = <R, x'>
-    if (!EC_POINTs_mul(group, R0, NULL, m, (const EC_POINT **)proof->R, (const BIGNUM **)x[1], ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINTs_mul(group, R0, NULL, m, (const EC_POINT **)proof->R, (const BIGNUM **)x[1], ctx), error);
 
     // P0 = P + L0 + R0
-    if (!EC_POINT_add(group, P0, L0, R0, ctx))
-    {
-        goto error;
-    }
-
-    if (!EC_POINT_add(group, P0, P0, P, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINT_add(group, P0, L0, R0, ctx), error);
+    try_or(EC_POINT_add(group, P0, P0, P, ctx), error);
 
     // T0 = G0 + H0 + Q0
-    if (!EC_POINT_add(group, T0, G0, H0, ctx))
-    {
-        goto error;
-    }
-    if (!EC_POINT_add(group, T0, T0, Q0, ctx))
-    {
-        goto error;
-    }
+    try_or(EC_POINT_add(group, T0, G0, H0, ctx), error);
+    try_or(EC_POINT_add(group, T0, T0, Q0, ctx), error);
 
     if (EC_POINT_cmp(group, T0, P0, ctx) == 0)
     {
