@@ -134,6 +134,10 @@ int test1()
     EC_POINT *P2;
     EC_GROUP *group = EC_GROUP_gen();
     BN_CTX *ctx;
+    int ret;
+    char *s = NULL;
+    IP_PROOF *proof = NULL;
+    IP_PROOF *proof2 = NULL;
 
     ctx = BN_CTX_new();
     const BIGNUM *order = EC_GROUP_get0_order(group);
@@ -169,14 +173,14 @@ int test1()
     }
 
     printf("begin:\n");
-    IP_PROOF *proof = inner_product_prove((const EC_POINT **)G, (const EC_POINT **)H, Q, (const BIGNUM **)a, (const BIGNUM **)b, group, n);
+    proof = inner_product_prove((const EC_POINT **)G, (const EC_POINT **)H, Q, (const BIGNUM **)a, (const BIGNUM **)b, group, n);
 
     if (proof == NULL)
     {
         printf("proof is NULL\n");
     }
 
-    int ret = inner_product_verify(proof, (const EC_POINT **)G, (const EC_POINT **)H, Q, P0, group, n);
+    ret = inner_product_verify(proof, (const EC_POINT **)G, (const EC_POINT **)H, Q, P0, group, n);
 
     printf("for valid P, the result is %d.\n", ret);
 
@@ -184,13 +188,13 @@ int test1()
 
     printf("for invalid P, the result is %d.\n", ret);
 
-    char *s = ip_proof_2_hex(group, proof);
+    s = ip_proof_2_hex(group, proof);
     if (!s)
     {
         printf("convert proof to hex: fail\n");
     }
 
-    IP_PROOF *proof2 = hex_2_ip_proof(group, s);
+    proof2 = hex_2_ip_proof(group, s);
     if (!proof2)
     {
         printf("convert hex to proof: fail\n");
