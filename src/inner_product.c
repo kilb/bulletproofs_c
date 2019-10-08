@@ -224,10 +224,8 @@ void ec_print(const EC_GROUP *group, EC_POINT *p)
 
 int hash(unsigned char *out, const unsigned char *in, const size_t len)
 {
-    unsigned char* s = SHA256(in, len, NULL);
-    strcpy((char *)out, (char *)s);
-    int out_len = strlen((char *)s);
-    return out_len;
+    SHA256(in, len, out);
+    return SHA256_DIGEST_LENGTH;
 }
 
 // calculate hash
