@@ -1,4 +1,5 @@
 #include "inner_product.h"
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <openssl/bn.h>
@@ -226,7 +227,6 @@ int hash(unsigned char *out, const unsigned char *in, const size_t len)
     unsigned char* s = SHA256(in, len, NULL);
     strcpy((char *)out, (char *)s);
     int out_len = strlen((char *)s);
-    free(s);
     return out_len;
 }
 
@@ -784,3 +784,4 @@ void IP_PROOF_free(IP_PROOF *proof)
         BN_free(proof->b);
     }
 }
+
