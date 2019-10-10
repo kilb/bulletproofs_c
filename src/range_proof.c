@@ -750,8 +750,15 @@ error:
     return r;
 }
 
-RANGE_PROOF *hex_2_range_proof(const EC_GROUP *group, char *h)
+RANGE_PROOF *hex_2_range_proof(const EC_GROUP *group, const char *ch)
 {
+    if(!ch) {
+        return NULL;
+    }
+    int len = strlen(ch) + 1;
+    char h[len];
+    strcpy(h, ch);
+    
     char *pt[10];
     EC_POINT *A = NULL;
     EC_POINT *S = NULL;

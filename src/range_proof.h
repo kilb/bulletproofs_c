@@ -26,4 +26,4 @@ int RANGE_PROOF_verify(const EC_GROUP *group, const RANGE_PROOF *proof, const EC
                        const EC_POINT **H, const EC_POINT **C, const EC_POINT *P, int bits, int n);
 void RANGE_PROOF_free(RANGE_PROOF *p);
 char *range_proof_2_hex(const EC_GROUP* group, RANGE_PROOF *p);
-RANGE_PROOF *hex_2_range_proof(const EC_GROUP *group, char *h);
+RANGE_PROOF *hex_2_range_proof(const EC_GROUP *group, const char *ch);

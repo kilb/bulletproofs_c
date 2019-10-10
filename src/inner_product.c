@@ -98,10 +98,15 @@ error:
     return s;
 }
 
-IP_PROOF *hex_2_ip_proof(const EC_GROUP* group, char *s) {
-    if(!s) {
+IP_PROOF *hex_2_ip_proof(const EC_GROUP* group, const char *cs) {
+    if(!cs) {
         return NULL;
     }
+
+    int len = strlen(cs) + 1;
+    char s[len];
+    strcpy(s, cs);
+    
     IP_PROOF *p = NULL;
     EC_POINT **L = NULL;
     EC_POINT **R = NULL;
